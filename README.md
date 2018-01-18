@@ -5,7 +5,7 @@ An implementation of `MobileNet2` in PyTorch. `MobileNet2` is an efficient convo
 ## Usage
 Clone the repo:
 ```bash
-git clone https://github.com/Randl/ShuffleNet.git
+git clone https://github.com/Randl/MobileNet2-pytorch/
 pip install -r requirements.txt
 ```
 
