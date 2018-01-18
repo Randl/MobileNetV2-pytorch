@@ -15,7 +15,7 @@ from torch.autograd import Variable
 from torchvision import datasets, transforms
 from tqdm import tqdm, trange
 
-from model import ShuffleNet
+from model import MobileNet2
 
 parser = argparse.ArgumentParser(description='ShuffleNet training with PyTorch')
 parser.add_argument('--dataroot', required=True, help='Path to ImageNet train and val folders, preprocessed '
@@ -28,12 +28,10 @@ parser.add_argument('--type', default='torch.cuda.FloatTensor', help='Type of te
 # Optimization options
 parser.add_argument('--epochs', type=int, default=300, help='Number of epochs to train.')
 parser.add_argument('-b', '--batch-size', default=256, type=int, metavar='N', help='mini-batch size (default: 256)')
-parser.add_argument('--learning_rate', '-lr', type=float, default=0.1, help='The learning rate.')
+parser.add_argument('--learning_rate', '-lr', type=float, default=0.045, help='The learning rate.')
 parser.add_argument('--momentum', '-m', type=float, default=0.9, help='Momentum.')
 parser.add_argument('--decay', '-d', type=float, default=4e-5, help='Weight decay (L2 penalty).')
-parser.add_argument('--schedule', type=int, nargs='+', default=[150, 225],
-                    help='Decrease learning rate at these epochs.')
-parser.add_argument('--gamma', type=float, default=0.1, help='LR is multiplied by gamma on schedule.')
+parser.add_argument('--gamma', type=float, default=0.98, help='LR is multiplied by gamma each epoch.')
 
 parser.add_argument('-e', '--evaluate', type=str, metavar='FILE', help='evaluate model FILE on validation set')
 # Checkpoints
@@ -128,7 +126,7 @@ def main():
         args.gpus = None
 
     # running on ImageNet
-    model = ShuffleNet(num_classes=1000, scale=args.scaling, groups=args.groups, in_channels=3)
+    model = MobileNet2(scale=args.scaling)
     num_parameters = sum([l.nelement() for l in model.parameters()])
     print('number of parameters: {}'.format(num_parameters))
     print(model)
@@ -138,8 +136,8 @@ def main():
     criterion.type(args.type)
     model.type(args.type)
 
-    optimizer = torch.optim.SGD(model.parameters(), args.learning_rate, momentum=args.momentum, weight_decay=args.decay,
-                                nesterov=True)
+    optimizer = torch.optim.RMSprop(model.parameters(), args.learning_rate, alpha=0.9, momentum=args.momentum,
+                                    weight_decay=args.decay)
 
     best_test = 0
     train_acc = []
@@ -168,10 +166,9 @@ def main():
         test(model, criterion)
         return
     for epoch in trange(args.start_epoch, args.epochs + 1):
-        if epoch in args.schedule:
-            args.learning_rate *= args.gamma
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = args.learning_rate
+        args.learning_rate *= args.gamma
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = args.learning_rate
         train_accuracy = train(model, epoch, optimizer, criterion)
         test_accuracy = test(model, criterion)
 
