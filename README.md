@@ -1,4 +1,4 @@
-# MobileNet2 in in PyTorch
+# MobileNet2 in PyTorch
 An implementation of `MobileNet2` in PyTorch. `MobileNet2` is an efficient convolutional neural network architecture for mobile devices. For more information check the paper:
 [Inverted Residuals and Linear Bottlenecks: Mobile Networks for Classification, Detection and Segmentation](https://arxiv.org/abs/1801.04381) 
 

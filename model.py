@@ -56,7 +56,6 @@ class MobileNet2(nn.Module):
 
         """
 
-        # TODO: dropout
         super(MobileNet2, self).__init__()
 
         self.scale = scale
@@ -79,6 +78,7 @@ class MobileNet2(nn.Module):
         self.conv_last = nn.Conv2d(self.c[-1], self.last_conv_out_ch, kernel_size=1, bias=False)
         self.bn_last = nn.BatchNorm2d(self.last_conv_out_ch)
         self.avgpool = nn.AvgPool2d(7)
+        self.dropout = nn.Dropout(p=0.2, inplace=True)  # confirmed by paper authors
         self.fc = nn.Linear(self.last_conv_out_ch, self.num_classes)
         self.init_params()
 
@@ -142,8 +142,9 @@ class MobileNet2(nn.Module):
         x = self.bn_last(x)
         x = self.activation(x)
 
-        # global average pooling layer
+        # average pooling layer
         x = self.avgpool(x)
+        x = self.dropout(x)
 
         # flatten for input to fully-connected layer
         x = x.view(x.size(0), -1)
