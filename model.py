@@ -1,8 +1,8 @@
+from collections import OrderedDict
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
-from collections import OrderedDict
 from torch.nn import init
 
 
@@ -15,10 +15,12 @@ class LinearBottleneck(nn.Module):
                                groups=inplanes * t)
         self.bn2 = nn.BatchNorm2d(inplanes * t)
         self.conv3 = nn.Conv2d(inplanes * t, outplanes, kernel_size=1, bias=False)
-        self.bn3 = nn.BatchNorm2d(inplanes * t)
+        self.bn3 = nn.BatchNorm2d(outplanes)
         self.activation = activation(inplace=True)
         self.stride = stride
         self.t = t
+        self.inplanes = inplanes
+        self.outplanes = outplanes
 
     def forward(self, x):
         residual = x
@@ -34,7 +36,7 @@ class LinearBottleneck(nn.Module):
         out = self.conv3(out)
         out = self.bn3(out)
 
-        if self.stride == 1:
+        if self.stride == 1 and self.inplanes == self.outplanes:
             out += residual
 
         return out
@@ -60,7 +62,8 @@ class MobileNet2(nn.Module):
 
         self.scale = scale
         self.t = t
-        self.activation = activation
+        self.activation_type = activation
+        self.activation = activation(inplace=True)
         self.num_classes = num_classes
 
         self.num_of_channels = [32, 16, 24, 32, 64, 96, 160, 320]
@@ -102,14 +105,14 @@ class MobileNet2(nn.Module):
 
         # First module is the only one utilizing stride
         first_module = LinearBottleneck(inplanes=inplanes, outplanes=outplanes, stride=stride, t=t,
-                                        activation=self.activation)
+                                        activation=self.activation_type)
         modules[stage_name + "_0"] = first_module
 
         # add more LinearBottleneck depending on number of repeats
         for i in range(n - 1):
             name = stage_name + "_{}".format(i + 1)
             module = LinearBottleneck(inplanes=outplanes, outplanes=outplanes, stride=1, t=6,
-                                      activation=self.activation)
+                                      activation=self.activation_type)
             modules[name] = module
 
         return nn.Sequential(modules)
@@ -118,15 +121,15 @@ class MobileNet2(nn.Module):
         modules = OrderedDict()
         stage_name = "Bottlenecks"
 
-        # First module is the only one utilizing stride
+        # First module is the only one with t=1
         bottleneck1 = self._make_stage(inplanes=self.c[0], outplanes=self.c[1], n=self.n[1], stride=self.s[1], t=1,
-                                       stage=1)
+                                       stage=0)
         modules[stage_name + "_0"] = bottleneck1
 
         # add more LinearBottleneck depending on number of repeats
-        for i in range(1, len(self.c)):
-            name = stage_name + "_{}".format(i + 1)
-            module = self._make_stage(inplanes=self.c[i - 1], outplanes=self.c[i], n=self.n[i], stride=self.s[i],
+        for i in range(1, len(self.c) - 1):
+            name = stage_name + "_{}".format(i)
+            module = self._make_stage(inplanes=self.c[i], outplanes=self.c[i + 1], n=self.n[i], stride=self.s[i],
                                       t=self.t, stage=i)
             modules[name] = module
 
@@ -159,3 +162,7 @@ if __name__ == "__main__":
     print(model1)
     model2 = MobileNet2(scale=0.35)
     print(model2)
+    model3 = MobileNet2(in_channels=2, num_classes=10)
+    print(model3)
+    x = torch.autograd.Variable(torch.randn(1, 2, 224, 224))
+    print(model3(x))
