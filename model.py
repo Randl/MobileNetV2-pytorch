@@ -46,7 +46,7 @@ class MobileNet2(nn.Module):
     """MobileNet2 implementation.
     """
 
-    def __init__(self, in_channels=3, num_classes=1000, scale=1.0, t=6, activation=nn.ReLU6):
+    def __init__(self, in_channels=3, input_size=224, num_classes=1000, scale=1.0, t=6, activation=nn.ReLU6):
         """MobileNet2 constructor.
 
         Arguments:
@@ -67,6 +67,7 @@ class MobileNet2(nn.Module):
         self.num_classes = num_classes
 
         self.num_of_channels = [32, 16, 24, 32, 64, 96, 160, 320]
+        self.last_pooling = {224: 7, 196: 7, 160: 5, 128: 4, 96: 3}
 
         self.c = [int(ch * self.scale) for ch in self.num_of_channels]
         self.n = [1, 1, 2, 3, 4, 3, 3, 1]
@@ -80,7 +81,7 @@ class MobileNet2(nn.Module):
         self.last_conv_out_ch = 1280 if self.scale <= 1 else 1280 * self.scale
         self.conv_last = nn.Conv2d(self.c[-1], self.last_conv_out_ch, kernel_size=1, bias=False)
         self.bn_last = nn.BatchNorm2d(self.last_conv_out_ch)
-        self.avgpool = nn.AvgPool2d(7)
+        self.avgpool = nn.AvgPool2d(self.last_pooling[input_size])
         self.dropout = nn.Dropout(p=0.2, inplace=True)  # confirmed by paper authors
         self.fc = nn.Linear(self.last_conv_out_ch, self.num_classes)
         self.init_params()
@@ -166,3 +167,8 @@ if __name__ == "__main__":
     print(model3)
     x = torch.randn(1, 2, 224, 224)
     print(model3(x))
+    model4_size = 96
+    model4 = MobileNet2(input_size=model4_size, num_classes=10)
+    print(model4)
+    x2 = torch.randn(1, 3, model4_size, model4_size)
+    print(model4(x2))
