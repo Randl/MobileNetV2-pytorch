@@ -128,7 +128,7 @@ def main():
     if args.gpus is not None:
         args.gpus = [int(i) for i in args.gpus.split(',')]
         device = 'cuda:' + str(args.gpus[0])
-        torch.cuda.set_device(args.gpus[0])
+        # torch.cuda.set_device(args.gpus[0])
         cudnn.benchmark = True
     else:
         device = 'cpu'
@@ -177,9 +177,8 @@ def main():
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
-
     if args.evaluate:
-        test_loss, test_accuracy = test(model, criterion, device, dtype)  #TODO
+        test_loss, test_accuracy = test(model, criterion, device, dtype)  # TODO
         return
 
     csv_logger = CsvLogger(filepath=save_path)
@@ -190,22 +189,23 @@ def main():
             args.learning_rate *= args.gamma
             for param_group in optimizer.param_groups:
                 param_group['lr'] = args.learning_rate
-        train_loss, train_accuracy = train(model, epoch, optimizer, criterion, device, dtype)
-        test_loss, test_accuracy = test(model, criterion, device, dtype)
-        csv_logger.write({'epoch': epoch + 1, 'val_error1': 1 - test_accuracy, 'val_loss': test_loss,
-                          'train_error1': 1 - train_accuracy, 'train_loss': train_loss})
+        train_loss, train_accuracy1, train_accuracy5, = train(model, epoch, optimizer, criterion, device, dtype)
+        test_loss, test_accuracy1, test_accuracy5 = test(model, criterion, device, dtype)
+        csv_logger.write({'epoch': epoch + 1, 'val_error1': 1 - test_accuracy1, 'val_error5': 1 - test_accuracy5,
+                          'val_loss': test_loss, 'train_error1': 1 - train_accuracy1,
+                          'train_error5': 1 - train_accuracy5, 'train_loss': train_loss})
         save_checkpoint({'epoch': epoch + 1, 'state_dict': model.state_dict(), 'best_prec1': best_test,
                          'optimizer': optimizer.state_dict(), 'train_acc': train_acc, 'test_acc': test_acc},
-                        test_accuracy > best_test, filepath=save_path)
-        csv_logger.plot_progress_err(claimed_acc=0.718)  #TODO
-        if test_accuracy > best_test:
-            best_test = test_accuracy
+                        test_accuracy1 > best_test, filepath=save_path)
+        csv_logger.plot_progress_err(claimed_acc=0.718)  # TODO
+        if test_accuracy1 > best_test:
+            best_test = test_accuracy1
 
 
 def train(model, epoch, optimizer, criterion, device, dtype):
     model.train()
+    correct1, correct5 = 0, 0
 
-    correct = 0
     for batch_idx, (data, target) in enumerate(tqdm(train_loader)):
         data, target = data.to(device=device, dtype=dtype), target.to(device=device)
 
@@ -216,39 +216,60 @@ def train(model, epoch, optimizer, criterion, device, dtype):
         loss.backward()
         optimizer.step()
 
-        pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
-        curr_correct = pred.eq(target.data.view_as(pred)).cpu().sum().item()
-        correct += curr_correct
+        corr = correct(output, target, topk=(1, 5))
+        correct1 += corr[0]
+        correct5 += corr[0]
 
         if batch_idx % args.log_interval == 0:
             tqdm.write(
                 'Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}. '
-                'Top-1 accuracy: {:.2f}%({:.2f})%.'.format(epoch, batch_idx, len(train_loader),
+                'Top-1 accuracy: {:.2f}%({:.2f})%.'
+                'Top-5 accuracy: {:.2f}%({:.2f})%.'.format(epoch, batch_idx, len(train_loader),
                                                            100. * batch_idx / len(train_loader), loss.item(),
-                                                           100. * curr_correct / args.batch_size,
-                                                           100. * correct / (args.batch_size * (batch_idx + 1))))
-    return  loss.item(), correct / len(train_loader.dataset)
+                                                           100. * corr[0] / args.batch_size,
+                                                           100. * correct1 / (args.batch_size * (batch_idx + 1)),
+                                                           100. * corr[0] / args.batch_size,
+                                                           100. * correct5 / (args.batch_size * (batch_idx + 1))))
+    return loss.item(), correct1 / len(train_loader.dataset), correct5 / len(train_loader.dataset)
 
 
 def test(model, criterion, device, dtype):
     model.eval()
     test_loss = 0
-    correct = 0
+    correct1, correct5 = 0, 0
 
     for batch_idx, (data, target) in enumerate(tqdm(val_loader)):
         data, target = data.to(device=device, dtype=dtype), target.to(device=device)
         with torch.no_grad():
             output = model(data)
             test_loss += criterion(output, target).item()  # sum up batch loss
-            pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
-            correct += pred.eq(target.data.view_as(pred)).cpu().sum().item()
+            corr = correct(output, target, topk=(1, 5))
+            correct1 += corr[0]
+            correct5 += corr[0]
 
     test_loss /= len(val_loader)
 
-    tqdm.write('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.1f}%)'.format(
-        test_loss, correct, len(val_loader.dataset),
-        100. * correct / len(val_loader.dataset)))
-    return test_loss, correct / len(val_loader.dataset)
+    tqdm.write(
+        '\nTest set: Average loss: {:.4f}, Top1: {}/{} ({:.1f}%), '
+        'Top5: {}/{} ({:.1f}%)'.format(test_loss, correct1, len(val_loader.dataset),
+                                       100. * correct1 / len(val_loader.dataset), correct1, len(val_loader.dataset),
+                                       100. * correct5 / len(val_loader.dataset)))
+    return test_loss, correct1 / len(val_loader.dataset), correct5 / len(val_loader.dataset)
+
+
+def correct(output, target, topk=(1,)):
+    """Computes the correct@k for the specified values of k"""
+    maxk = max(topk)
+
+    _, pred = output.topk(maxk, 1, True, True)
+    pred = pred.t().type_as(target)
+    correct = pred.eq(target.view(1, -1).expand_as(pred))
+
+    res = []
+    for k in topk:
+        correct_k = correct[:k].view(-1).float().sum(0).item()
+        res.append(correct_k)
+    return res
 
 
 if __name__ == '__main__':

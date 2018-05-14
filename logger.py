@@ -4,12 +4,14 @@ import os.path
 from matplotlib import pyplot as plt
 import numpy as np
 
+
 class CsvLogger:
     def __init__(self, filepath='./', filename='results.csv'):
         self.log_path = filepath
         self.log_name = filename
         self.csv_path = os.path.join(self.log_path, self.log_name)
-        self.fieldsnames = ['epoch', 'val_error1',  'val_loss', 'train_error1', 'train_loss'] #'val_error5',
+        self.fieldsnames = ['epoch', 'val_error1', 'val_error5', 'val_loss', 'train_error1', 'train_error5',
+                            'train_loss']
         self.data = {}
         for field in self.fieldsnames:
             self.data[field] = []
