@@ -2,6 +2,7 @@ import argparse
 import os
 import shutil
 import random
+import sys
 
 import torch
 import torch.backends.cudnn as cudnn
@@ -11,10 +12,10 @@ import torch.optim
 import torch.optim as optim
 import torch.utils.data
 from datetime import datetime
-from torch.autograd import Variable
 from torchvision import datasets, transforms
 from tqdm import tqdm, trange
 
+from logger import CsvLogger
 from model import MobileNet2
 
 parser = argparse.ArgumentParser(description='ShuffleNet training with PyTorch')
@@ -27,7 +28,7 @@ parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
 parser.add_argument('--type', default='torch.cuda.FloatTensor', help='Type of tensor - e.g torch.cuda.HalfTensor')
 # Optimization options
 parser.add_argument('--epochs', type=int, default=300, help='Number of epochs to train.')
-parser.add_argument('-b', '--batch-size', default=256, type=int, metavar='N', help='mini-batch size (default: 256)')
+parser.add_argument('-b', '--batch-size', default=128, type=int, metavar='N', help='mini-batch size (default: 128)')
 parser.add_argument('--learning_rate', '-lr', type=float, default=0.045, help='The learning rate.')
 parser.add_argument('--momentum', '-m', type=float, default=0.9, help='Momentum.')
 parser.add_argument('--decay', '-d', type=float, default=4e-5, help='Weight decay (L2 penalty).')
@@ -165,23 +166,23 @@ def main():
     if args.evaluate:
         test(model, criterion)
         return
+
+    csv_logger = CsvLogger(filepath=save_path)
+    csv_logger.save_params(sys.argv, args)
+
     for epoch in trange(args.start_epoch, args.epochs + 1):
         args.learning_rate *= args.gamma
         for param_group in optimizer.param_groups:
             param_group['lr'] = args.learning_rate
-        train_accuracy = train(model, epoch, optimizer, criterion)
-        test_accuracy = test(model, criterion)
-
-        train_acc.append(train_accuracy)
-        test_acc.append(test_accuracy)
+        train_loss, train_accuracy = train(model, epoch, optimizer, criterion)
+        test_loss, test_accuracy = test(model, criterion)
+        csv_logger.write({'epoch': epoch + 1, 'val_error1': 1 - test_accuracy, 'val_loss': test_loss,
+                          'train_error1': 1 - train_accuracy, 'train_loss': train_loss})
         save_checkpoint({'epoch': epoch + 1, 'state_dict': model.state_dict(), 'best_prec1': best_test,
                          'optimizer': optimizer.state_dict(), 'train_acc': train_acc, 'test_acc': test_acc},
                         test_accuracy > best_test, filepath=save_path)
         if test_accuracy > best_test:
             best_test = test_accuracy
-
-        tqdm.write('Train: \n[{}]\nVal:\n[{}]\n'.format(', '.join('{:.5}'.format(x) for x in train_acc),
-                                                        ', '.join('{:.5}'.format(x) for x in test_acc)))  # Dirty
 
 
 def train(model, epoch, optimizer, criterion):
@@ -192,7 +193,6 @@ def train(model, epoch, optimizer, criterion):
         if args.gpus is not None:
             data, target = data.cuda(async=True), target.cuda(async=True)
 
-        data, target = Variable(data), Variable(target)
         optimizer.zero_grad()
         output = model(data)
 
@@ -201,17 +201,17 @@ def train(model, epoch, optimizer, criterion):
         optimizer.step()
 
         pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
-        curr_correct = pred.eq(target.data.view_as(pred)).cpu().sum()
+        curr_correct = pred.eq(target.data.view_as(pred)).cpu().sum().item()
         correct += curr_correct
 
         if batch_idx % args.log_interval == 0:
             tqdm.write(
                 'Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}. '
                 'Top-1 accuracy: {:.2f}%({:.2f})%.'.format(epoch, batch_idx, len(train_loader),
-                                                           100. * batch_idx / len(train_loader), loss.data[0],
+                                                           100. * batch_idx / len(train_loader), loss.item(),
                                                            100. * curr_correct / args.batch_size,
                                                            100. * correct / (args.batch_size * (batch_idx + 1))))
-    return correct / len(train_loader.dataset)
+    return  loss.item(), correct / len(train_loader.dataset)
 
 
 def test(model, criterion):
@@ -222,18 +222,18 @@ def test(model, criterion):
     for batch_idx, (data, target) in enumerate(tqdm(val_loader)):
         if args.gpus is not None:
             data, target = data.cuda(async=True), target.cuda(async=True)
-        data, target = Variable(data, volatile=True), Variable(target)
-        output = model(data)
-        test_loss += criterion(output, target).data[0]  # sum up batch loss
-        pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
-        correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+        with torch.no_grad():
+            output = model(data)
+            test_loss += criterion(output, target).item()  # sum up batch loss
+            pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
+            correct += pred.eq(target.data.view_as(pred)).cpu().sum().item()
 
     test_loss /= len(val_loader.dataset)
 
     tqdm.write('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.1f}%)'.format(
         test_loss, correct, len(val_loader.dataset),
         100. * correct / len(val_loader.dataset)))
-    return correct / len(val_loader.dataset)
+    return test_loss, correct / len(val_loader.dataset)
 
 
 if __name__ == '__main__':

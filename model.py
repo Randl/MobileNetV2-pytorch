@@ -90,14 +90,14 @@ class MobileNet2(nn.Module):
             if isinstance(m, nn.Conv2d):
                 init.kaiming_normal(m.weight, mode='fan_out')
                 if m.bias is not None:
-                    init.constant(m.bias, 0)
+                    init.constant_(m.bias, 0)
             elif isinstance(m, nn.BatchNorm2d):
-                init.constant(m.weight, 1)
-                init.constant(m.bias, 0)
+                init.constant_(m.weight, 1)
+                init.constant_(m.bias, 0)
             elif isinstance(m, nn.Linear):
                 init.normal(m.weight, std=0.001)
                 if m.bias is not None:
-                    init.constant(m.bias, 0)
+                    init.constant_(m.bias, 0)
 
     def _make_stage(self, inplanes, outplanes, n, stride, t, stage):
         modules = OrderedDict()
@@ -164,5 +164,5 @@ if __name__ == "__main__":
     print(model2)
     model3 = MobileNet2(in_channels=2, num_classes=10)
     print(model3)
-    x = torch.autograd.Variable(torch.randn(1, 2, 224, 224))
+    x = torch.randn(1, 2, 224, 224)
     print(model3(x))
