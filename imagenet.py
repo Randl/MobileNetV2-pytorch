@@ -19,18 +19,17 @@ from logger import CsvLogger
 from model import MobileNet2
 
 parser = argparse.ArgumentParser(description='ShuffleNet training with PyTorch')
-parser.add_argument('--dataroot', required=True, help='Path to ImageNet train and val folders, preprocessed '
-                                                      'as described in '
-                                                      'https://github.com/facebook/fb.resnet.torch/blob/master/INSTALL.md#download-the-imagenet-dataset')
+parser.add_argument('--dataroot', required=True, metavar='PATH',
+                    help='Path to ImageNet train and val folders, preprocessed as described in '
+                         'https://github.com/facebook/fb.resnet.torch/blob/master/INSTALL.md#download-the-imagenet-dataset')
 parser.add_argument('--gpus', default=None, help='List of GPUs used for training - e.g 0,1,3')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='Number of data loading workers (default: 4)')
-parser.add_argument('--type', default='float32',
-                    help='Type of tensor: float32, float16, float64, int8. Default: float32')
+parser.add_argument('--type', default='float32', help='Type of tensor: float32, float16, float64. Default: float32')
 
 # Optimization options
 parser.add_argument('--epochs', type=int, default=300, help='Number of epochs to train.')
-parser.add_argument('-b', '--batch-size', default=96, type=int, metavar='N', help='mini-batch size (default: 96)')
+parser.add_argument('-b', '--batch-size', default=64, type=int, metavar='N', help='mini-batch size (default: 96)')
 parser.add_argument('--learning_rate', '-lr', type=float, default=0.01, help='The learning rate.')
 parser.add_argument('--momentum', '-m', type=float, default=0.9, help='Momentum.')
 parser.add_argument('--decay', '-d', type=float, default=4e-5, help='Weight decay (L2 penalty).')
@@ -48,8 +47,8 @@ parser.add_argument('--log-interval', type=int, default=100, metavar='N', help='
 parser.add_argument('--seed', type=int, default=None, metavar='S', help='random seed (default: 1)')
 
 # Architecture
-parser.add_argument('--scaling', type=float, default=1, metavar='s', help='Scaling of MobileNet (default x1).')
-parser.add_argument('--input_size', type=float, default=224, metavar='s', help='Input size of MobileNet (default 224).')
+parser.add_argument('--scaling', type=float, default=1, metavar='SC', help='Scaling of MobileNet (default x1).')
+parser.add_argument('--input_size', type=float, default=224, metavar='I', help='Input size of MobileNet (default 224).')
 
 args = parser.parse_args()
 
@@ -89,7 +88,7 @@ def scale_crop(input_size, scale_size=None, normalize=__imagenet_stats):
 
 def get_transform(augment=True, input_size=224):
     normalize = __imagenet_stats
-    scale_size = 256
+    scale_size = int(input_size / 0.875)
     if augment:
         return inception_preproccess(input_size=input_size, normalize=normalize)
     else:
@@ -138,11 +137,9 @@ def main():
         dtype = torch.float32
     elif args.type == 'float16':
         dtype = torch.float16
-    elif args.type == 'int8':
-        dtype = torch.int8
     else:
-        return  # TODO
-    # running on ImageNet
+        raise ValueError('Wrong type!')  # TODO int8
+
     model = MobileNet2(input_size=args.input_size, scale=args.scaling)
     num_parameters = sum([l.nelement() for l in model.parameters()])
     print('number of parameters: {}'.format(num_parameters))
@@ -158,8 +155,6 @@ def main():
                                 nesterov=True)
 
     best_test = 0
-    train_acc = []
-    test_acc = []
 
     # optionally resume from a checkpoint
     if args.resume:
@@ -168,8 +163,6 @@ def main():
             checkpoint = torch.load(args.resume)
             args.start_epoch = checkpoint['epoch'] - 1
             best_test = checkpoint['best_prec1']
-            train_acc = checkpoint['train_acc']
-            test_acc = checkpoint['test_acc']
             model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
             print("=> loaded checkpoint '{}' (epoch {})"
@@ -195,9 +188,11 @@ def main():
                           'val_loss': test_loss, 'train_error1': 1 - train_accuracy1,
                           'train_error5': 1 - train_accuracy5, 'train_loss': train_loss})
         save_checkpoint({'epoch': epoch + 1, 'state_dict': model.state_dict(), 'best_prec1': best_test,
-                         'optimizer': optimizer.state_dict(), 'train_acc': train_acc, 'test_acc': test_acc},
-                        test_accuracy1 > best_test, filepath=save_path)
-        csv_logger.plot_progress_err(claimed_acc=0.718)  # TODO
+                         'optimizer': optimizer.state_dict()}, test_accuracy1 > best_test, filepath=save_path)
+
+        # TODO https://github.com/keras-team/keras/blob/master/keras/applications/mobilenetv2.py
+        csv_logger.plot_progress(claimed_acc1=0.718, claimed_acc5=0.910)
+
         if test_accuracy1 > best_test:
             best_test = test_accuracy1
 
@@ -218,13 +213,13 @@ def train(model, epoch, optimizer, criterion, device, dtype):
 
         corr = correct(output, target, topk=(1, 5))
         correct1 += corr[0]
-        correct5 += corr[0]
+        correct5 += corr[1]
 
         if batch_idx % args.log_interval == 0:
             tqdm.write(
                 'Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}. '
-                'Top-1 accuracy: {:.2f}%({:.2f})%.'
-                'Top-5 accuracy: {:.2f}%({:.2f})%.'.format(epoch, batch_idx, len(train_loader),
+                'Top-1 accuracy: {:.2f}%({:.2f}%). '
+                'Top-5 accuracy: {:.2f}%({:.2f}%).'.format(epoch, batch_idx, len(train_loader),
                                                            100. * batch_idx / len(train_loader), loss.item(),
                                                            100. * corr[0] / args.batch_size,
                                                            100. * correct1 / (args.batch_size * (batch_idx + 1)),
@@ -245,7 +240,7 @@ def test(model, criterion, device, dtype):
             test_loss += criterion(output, target).item()  # sum up batch loss
             corr = correct(output, target, topk=(1, 5))
             correct1 += corr[0]
-            correct5 += corr[0]
+            correct5 += corr[1]
 
     test_loss /= len(val_loader)
 

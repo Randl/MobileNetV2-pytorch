@@ -13,3 +13,14 @@ Use the model defined in `model.py` to run ImageNet example:
 ```bash
 python imagenet.py --dataroot "/path/to/imagenet/"
 ```
+
+##Results
+TODO: regular model
+
+TODO: x0.35, x0.5, x1.4 model
+
+TODO: Smaller input model
+
+TODO: RMSprop with sgd init
+
+TODO: INT8 model
