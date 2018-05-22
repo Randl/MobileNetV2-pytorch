@@ -104,4 +104,7 @@ ENV/
 .vscode/
 
 .idea/
-results/
+results/*
+# models
+!/results/mobilenet_v2_0.35_224_top1_618_top5_840/
+!results/mobilenet_v2_0.35_224_top1_618_top5_840/*

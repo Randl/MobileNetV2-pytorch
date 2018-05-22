@@ -47,15 +47,16 @@ class MobileNet2(nn.Module):
     """
 
     def __init__(self, in_channels=3, input_size=224, num_classes=1000, scale=1.0, t=6, activation=nn.ReLU6):
-        """MobileNet2 constructor.
-
-        Arguments:
-            in_channels (int, optional): number of channels in the input tensor.
+        """
+        MobileNet2 constructor.
+        :param in_channels: (int, optional): number of channels in the input tensor.
                 Default is 3 for RGB image inputs.
-            num_classes (int, optional): number of classes to predict. Default
+        :param input_size:
+        :param num_classes: number of classes to predict. Default
                 is 1000 for ImageNet.
-                scale:
-
+        :param scale:
+        :param t:
+        :param activation:
         """
 
         super(MobileNet2, self).__init__()
@@ -67,7 +68,7 @@ class MobileNet2(nn.Module):
         self.num_classes = num_classes
 
         self.num_of_channels = [32, 16, 24, 32, 64, 96, 160, 320]
-        self.last_pooling = {224: 7, 196: 7, 160: 5, 128: 4, 96: 3}
+        self.last_pooling = {224: 7, 192: 6, 160: 5, 128: 4, 96: 3}
 
         self.c = [int(ch * self.scale) for ch in self.num_of_channels]
         self.n = [1, 1, 2, 3, 4, 3, 3, 1]
@@ -167,7 +168,7 @@ if __name__ == "__main__":
     print(model3)
     x = torch.randn(1, 2, 224, 224)
     print(model3(x))
-    model4_size = 96
+    model4_size = 192
     model4 = MobileNet2(input_size=model4_size, num_classes=10)
     print(model4)
     x2 = torch.randn(1, 3, model4_size, model4_size)

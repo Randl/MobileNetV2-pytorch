@@ -1,6 +1,10 @@
 import csv
 import os.path
 
+import matplotlib
+
+matplotlib.use('Agg')
+
 from matplotlib import pyplot as plt
 import numpy as np
 
@@ -31,18 +35,24 @@ class CsvLogger:
             f.write('{}\n'.format(' '.join(args)))
             f.write('{}\n'.format(params))
 
+    def write_text(self, text, print_t=True):
+        with open(os.path.join(self.log_path, 'params.txt'), 'a') as f:
+            f.write('{}\n'.format(text))
+        if print_t:
+            print(text)
+
     def plot_progress_errk(self, claimed_acc=None, title='MobileNetv2', k=1):
         tr_str = 'train_error{}'.format(k)
         val_str = 'val_error{}'.format(k)
-        plt.figure(figsize=(18, 16), dpi=120)
+        plt.figure(figsize=(9, 8), dpi=300)
         plt.plot(self.data[tr_str], label='Training error')
         plt.plot(self.data[val_str], label='Validation error')
         if claimed_acc is not None:
             plt.plot((0, len(self.data[tr_str])), (1 - claimed_acc, 1 - claimed_acc), 'k--',
-                     label='Claimed validation error ({:.2}%)'.format(100. * (1 - claimed_acc)))
+                     label='Claimed validation error ({:.2f}%)'.format(100. * (1 - claimed_acc)))
         plt.plot((0, len(self.data[tr_str])),
                  (np.min(self.data[val_str]), np.min(self.data[val_str])), 'r--',
-                 label='Best validation error ({:.2}%)'.format(100. * (1 - np.min(self.data[val_str]))))
+                 label='Best validation error ({:.2f}%)'.format(100. * np.min(self.data[val_str])))
         plt.title('Top-{} error for'.format(k) + title)
         plt.xlabel('Epoch')
         plt.ylabel('Error')
@@ -51,7 +61,7 @@ class CsvLogger:
         plt.savefig(os.path.join(self.log_path, 'top{}.png'.format(k)))
 
     def plot_progress_loss(self, title='MobileNetv2'):
-        plt.figure(figsize=(18, 16), dpi=120)
+        plt.figure(figsize=(9, 8), dpi=300)
         plt.plot(self.data['train_loss'], label='Training')
         plt.plot(self.data['val_loss'], label='Validation')
         plt.title(title)

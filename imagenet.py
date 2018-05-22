@@ -1,17 +1,15 @@
 import argparse
 import os
-import shutil
 import random
+import shutil
 import sys
+from datetime import datetime
 
 import torch
 import torch.backends.cudnn as cudnn
-import torch.nn.functional as F
 import torch.nn.parallel
 import torch.optim
-import torch.optim as optim
 import torch.utils.data
-from datetime import datetime
 from torchvision import datasets, transforms
 from tqdm import tqdm, trange
 
@@ -28,17 +26,17 @@ parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
 parser.add_argument('--type', default='float32', help='Type of tensor: float32, float16, float64. Default: float32')
 
 # Optimization options
-parser.add_argument('--epochs', type=int, default=300, help='Number of epochs to train.')
+parser.add_argument('--epochs', type=int, default=400, help='Number of epochs to train.')
 parser.add_argument('-b', '--batch-size', default=64, type=int, metavar='N', help='mini-batch size (default: 96)')
 parser.add_argument('--learning_rate', '-lr', type=float, default=0.01, help='The learning rate.')
 parser.add_argument('--momentum', '-m', type=float, default=0.9, help='Momentum.')
 parser.add_argument('--decay', '-d', type=float, default=4e-5, help='Weight decay (L2 penalty).')
 parser.add_argument('--gamma', type=float, default=0.1, help='LR is multiplied by gamma at scheduled epochs.')
-parser.add_argument('--schedule', type=int, nargs='+', default=[150, 225],
+parser.add_argument('--schedule', type=int, nargs='+', default=[200, 300],
                     help='Decrease learning rate at these epochs.')
 
-parser.add_argument('-e', '--evaluate', type=str, metavar='FILE', help='evaluate model FILE on validation set')
 # Checkpoints
+parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true', help='Just evaluate model')
 parser.add_argument('--save', '-s', type=str, default='', help='Folder to save checkpoints.')
 parser.add_argument('--results_dir', metavar='RESULTS_DIR', default='./results', help='Directory to store results')
 parser.add_argument('--resume', default='', type=str, metavar='PATH', help='path to latest checkpoint (default: none)')
@@ -104,6 +102,20 @@ train_data = datasets.ImageFolder(root=os.path.join(args.dataroot, 'train'),
                                   transform=get_transform(input_size=args.input_size))
 train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True,
                                            num_workers=args.workers, pin_memory=True)
+
+# https://github.com/keras-team/keras/blob/master/keras/applications/mobilenetv2.py
+claimed_acc_top1 = {224: {1.4: 0.75, 1.3: 0.744, 1.0: 0.718, 0.75: 0.698, 0.5: 0.654, 0.35: 0.603},
+                    192: {1.0: 0.707, 0.75: 0.687, 0.5: 0.639, 0.35: 0.582},
+                    160: {1.0: 0.688, 0.75: 0.664, 0.5: 0.610, 0.35: 0.557},
+                    128: {1.0: 0.653, 0.75: 0.632, 0.5: 0.577, 0.35: 0.508},
+                    96: {1.0: 0.603, 0.75: 0.588, 0.5: 0.512, 0.35: 0.455},
+                    }
+claimed_acc_top5 = {224: {1.4: 0.925, 1.3: 0.921, 1.0: 0.910, 0.75: 0.896, 0.5: 0.864, 0.35: 0.829},
+                    192: {1.0: 0.901, 0.75: 0.889, 0.5: 0.854, 0.35: 0.812},
+                    160: {1.0: 0.890, 0.75: 0.873, 0.5: 0.832, 0.35: 0.791},
+                    128: {1.0: 0.869, 0.75: 0.855, 0.5: 0.808, 0.35: 0.750},
+                    96: {1.0: 0.832, 0.75: 0.816, 0.5: 0.758, 0.35: 0.704},
+                    }
 
 
 def main():
@@ -171,12 +183,20 @@ def main():
             print("=> no checkpoint found at '{}'".format(args.resume))
 
     if args.evaluate:
-        test_loss, test_accuracy = test(model, criterion, device, dtype)  # TODO
+        loss, top1, top5 = test(model, criterion, device, dtype)  # TODO
         return
 
     csv_logger = CsvLogger(filepath=save_path)
     csv_logger.save_params(sys.argv, args)
 
+    claimed_acc1 = None
+    claimed_acc5 = None
+    if args.input_size in claimed_acc_top1:
+        if args.scaling in claimed_acc_top1[args.input_size]:
+            claimed_acc1 = claimed_acc_top1[args.input_size][args.scaling]
+            claimed_acc5 = claimed_acc_top5[args.input_size][args.scaling]
+            csv_logger.write_text(
+                'Claimed accuracies are: {:.2f}% top-1, {:.2f}% top-5'.format(claimed_acc1 * 100., claimed_acc5 * 100.))
     for epoch in trange(args.start_epoch, args.epochs + 1):
         if epoch in args.schedule:
             args.learning_rate *= args.gamma
@@ -190,11 +210,12 @@ def main():
         save_checkpoint({'epoch': epoch + 1, 'state_dict': model.state_dict(), 'best_prec1': best_test,
                          'optimizer': optimizer.state_dict()}, test_accuracy1 > best_test, filepath=save_path)
 
-        # TODO https://github.com/keras-team/keras/blob/master/keras/applications/mobilenetv2.py
-        csv_logger.plot_progress(claimed_acc1=0.718, claimed_acc5=0.910)
+        csv_logger.plot_progress(claimed_acc1=claimed_acc1, claimed_acc5=claimed_acc5)
 
         if test_accuracy1 > best_test:
             best_test = test_accuracy1
+
+    csv_logger.write_text('Best accuracy is {:.2f}% top-1'.format(best_test * 100.))
 
 
 def train(model, epoch, optimizer, criterion, device, dtype):
@@ -223,7 +244,7 @@ def train(model, epoch, optimizer, criterion, device, dtype):
                                                            100. * batch_idx / len(train_loader), loss.item(),
                                                            100. * corr[0] / args.batch_size,
                                                            100. * correct1 / (args.batch_size * (batch_idx + 1)),
-                                                           100. * corr[0] / args.batch_size,
+                                                           100. * corr[1] / args.batch_size,
                                                            100. * correct5 / (args.batch_size * (batch_idx + 1))))
     return loss.item(), correct1 / len(train_loader.dataset), correct5 / len(train_loader.dataset)
 
@@ -246,12 +267,13 @@ def test(model, criterion, device, dtype):
 
     tqdm.write(
         '\nTest set: Average loss: {:.4f}, Top1: {}/{} ({:.1f}%), '
-        'Top5: {}/{} ({:.1f}%)'.format(test_loss, correct1, len(val_loader.dataset),
-                                       100. * correct1 / len(val_loader.dataset), correct1, len(val_loader.dataset),
-                                       100. * correct5 / len(val_loader.dataset)))
+        'Top5: {}/{} ({:.1f}%)'.format(test_loss, int(correct1), len(val_loader.dataset),
+                                       100. * correct1 / len(val_loader.dataset), int(correct5),
+                                       len(val_loader.dataset), 100. * correct5 / len(val_loader.dataset)))
     return test_loss, correct1 / len(val_loader.dataset), correct5 / len(val_loader.dataset)
 
 
+# TODO: separate file
 def correct(output, target, topk=(1,)):
     """Computes the correct@k for the specified values of k"""
     maxk = max(topk)
