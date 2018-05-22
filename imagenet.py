@@ -13,6 +13,7 @@ import torch.utils.data
 from torchvision import datasets, transforms
 from tqdm import tqdm, trange
 
+import flops_benchmark
 from logger import CsvLogger
 from model import MobileNet2
 
@@ -155,6 +156,9 @@ def main():
     model = MobileNet2(input_size=args.input_size, scale=args.scaling)
     num_parameters = sum([l.nelement() for l in model.parameters()])
     print('number of parameters: {}'.format(num_parameters))
+    print('FLOPs: {}'.format(
+        flops_benchmark.count_flops(MobileNet2, args.batch_size // len(args.gpus), device, dtype, args.input_size, 3,
+                                    args.scaling)))
     print(model)
 
     # define loss function (criterion) and optimizer

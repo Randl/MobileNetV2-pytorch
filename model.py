@@ -6,6 +6,25 @@ import torch.nn.functional as F
 from torch.nn import init
 
 
+def _make_divisible(v, divisor, min_value=None):
+    """
+    This function is taken from the original tf repo.
+    It ensures that all layers have a channel number that is divisible by 8
+    It can be seen here:
+    https://github.com/tensorflow/models/blob/master/research/slim/nets/mobilenet/mobilenet.py
+    :param v:
+    :param divisor:
+    :param min_value:
+    :return:
+    """
+    if min_value is None:
+        min_value = divisor
+    new_v = max(min_value, int(v + divisor / 2) // divisor * divisor)
+    # Make sure that round down does not go down by more than 10%.
+    if new_v < 0.9 * v:
+        new_v += divisor
+    return new_v
+
 class LinearBottleneck(nn.Module):
     def __init__(self, inplanes, outplanes, stride=1, t=6, activation=nn.ReLU6):
         super(LinearBottleneck, self).__init__()
@@ -46,7 +65,7 @@ class MobileNet2(nn.Module):
     """MobileNet2 implementation.
     """
 
-    def __init__(self, in_channels=3, input_size=224, num_classes=1000, scale=1.0, t=6, activation=nn.ReLU6):
+    def __init__(self, scale=1.0, input_size=224, t=6, in_channels=3, num_classes=1000, activation=nn.ReLU6):
         """
         MobileNet2 constructor.
         :param in_channels: (int, optional): number of channels in the input tensor.
@@ -70,7 +89,7 @@ class MobileNet2(nn.Module):
         self.num_of_channels = [32, 16, 24, 32, 64, 96, 160, 320]
         self.last_pooling = {224: 7, 192: 6, 160: 5, 128: 4, 96: 3}
 
-        self.c = [int(ch * self.scale) for ch in self.num_of_channels]
+        self.c = [_make_divisible(ch * self.scale, 8) for ch in self.num_of_channels]
         self.n = [1, 1, 2, 3, 4, 3, 3, 1]
         self.s = [2, 1, 2, 2, 2, 1, 2, 1]
         self.conv1 = nn.Conv2d(in_channels, self.c[0], kernel_size=3, bias=False, stride=self.s[0], padding=1)
@@ -79,7 +98,7 @@ class MobileNet2(nn.Module):
 
         # Last convolution has 1280 output channels for scale <= 1
         # TODO: check
-        self.last_conv_out_ch = 1280 if self.scale <= 1 else 1280 * self.scale
+        self.last_conv_out_ch = 1280 if self.scale <= 1 else _make_divisible(1280 * self.scale, 8)
         self.conv_last = nn.Conv2d(self.c[-1], self.last_conv_out_ch, kernel_size=1, bias=False)
         self.bn_last = nn.BatchNorm2d(self.last_conv_out_ch)
         self.avgpool = nn.AvgPool2d(self.last_pooling[input_size])
@@ -131,7 +150,8 @@ class MobileNet2(nn.Module):
         # add more LinearBottleneck depending on number of repeats
         for i in range(1, len(self.c) - 1):
             name = stage_name + "_{}".format(i)
-            module = self._make_stage(inplanes=self.c[i], outplanes=self.c[i + 1], n=self.n[i], stride=self.s[i],
+            module = self._make_stage(inplanes=self.c[i], outplanes=self.c[i + 1], n=self.n[i + 1],
+                                      stride=self.s[i + 1],
                                       t=self.t, stage=i)
             modules[name] = module
 
