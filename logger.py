@@ -10,18 +10,26 @@ import numpy as np
 
 
 class CsvLogger:
-    def __init__(self, filepath='./', filename='results.csv'):
+    def __init__(self, filepath='./', filename='results.csv', data=None):
         self.log_path = filepath
         self.log_name = filename
         self.csv_path = os.path.join(self.log_path, self.log_name)
         self.fieldsnames = ['epoch', 'val_error1', 'val_error5', 'val_loss', 'train_error1', 'train_error5',
                             'train_loss']
-        self.data = {}
-        for field in self.fieldsnames:
-            self.data[field] = []
+
         with open(self.csv_path, 'w') as f:
             writer = csv.DictWriter(f, fieldnames=self.fieldsnames)
             writer.writeheader()
+
+        self.data = {}
+        for field in self.fieldsnames:
+            self.data[field] = []
+        if data is not None:
+            for d in data:
+                d_num = {}
+                for key in d:
+                    d_num[key] = float(d[key]) if key != 'epoch' else int(d[key])
+                self.write(d_num)
 
     def write(self, data):
         for k in self.data:
@@ -53,7 +61,7 @@ class CsvLogger:
         plt.plot((0, len(self.data[tr_str])),
                  (np.min(self.data[val_str]), np.min(self.data[val_str])), 'r--',
                  label='Best validation error ({:.2f}%)'.format(100. * np.min(self.data[val_str])))
-        plt.title('Top-{} error for'.format(k) + title)
+        plt.title('Top-{} error for {}'.format(k, title))
         plt.xlabel('Epoch')
         plt.ylabel('Error')
         plt.legend()

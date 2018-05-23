@@ -3,6 +3,7 @@ import os
 import random
 import shutil
 import sys
+import csv
 from datetime import datetime
 
 import torch
@@ -173,6 +174,7 @@ def main():
     best_test = 0
 
     # optionally resume from a checkpoint
+    data = None
     if args.resume:
         if os.path.isfile(args.resume):
             print("=> loading checkpoint '{}'".format(args.resume))
@@ -183,6 +185,21 @@ def main():
             optimizer.load_state_dict(checkpoint['optimizer'])
             print("=> loaded checkpoint '{}' (epoch {})"
                   .format(args.resume, checkpoint['epoch']))
+        elif os.path.isdir(args.resume):
+            checkpoint_path = os.path.join(args.resume, 'checkpoint.pth.tar')
+            csv_path = os.path.join(args.resume, 'results.csv')
+            print("=> loading checkpoint '{}'".format(checkpoint_path))
+            checkpoint = torch.load(checkpoint_path)
+            args.start_epoch = checkpoint['epoch'] - 1
+            best_test = checkpoint['best_prec1']
+            model.load_state_dict(checkpoint['state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer'])
+            print("=> loaded checkpoint '{}' (epoch {})".format(checkpoint_path, checkpoint['epoch']))
+            data = []
+            with open(csv_path) as csvfile:
+                reader = csv.DictReader(csvfile)
+                for row in reader:
+                    data.append(row)
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
@@ -190,7 +207,7 @@ def main():
         loss, top1, top5 = test(model, criterion, device, dtype)  # TODO
         return
 
-    csv_logger = CsvLogger(filepath=save_path)
+    csv_logger = CsvLogger(filepath=save_path, data=data)
     csv_logger.save_params(sys.argv, args)
 
     claimed_acc1 = None
@@ -264,8 +281,8 @@ def test(model, criterion, device, dtype):
             output = model(data)
             test_loss += criterion(output, target).item()  # sum up batch loss
             corr = correct(output, target, topk=(1, 5))
-            correct1 += corr[0]
-            correct5 += corr[1]
+        correct1 += corr[0]
+        correct5 += corr[1]
 
     test_loss /= len(val_loader)
 
