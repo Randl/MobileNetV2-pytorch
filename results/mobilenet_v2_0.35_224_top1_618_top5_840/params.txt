@@ -1,2 +1,0 @@
-/home/chaimb/research/MobileNet2/imagenet.py --dataroot /home/chaimb/ILSVRC/Data/CLS-LOC --seed 42 --gpus 1,2,3,4 -j 20 --scaling 0.35 -b 512
-Namespace(batch_size=512, dataroot='/home/chaimb/ILSVRC/Data/CLS-LOC', decay=4e-05, epochs=300, evaluate=None, gamma=0.1, gpus=[1, 2, 3, 4], input_size=224, learning_rate=0.01, log_interval=100, momentum=0.9, results_dir='./results', resume='', save='2018-05-19_20-29-31', scaling=0.35, schedule=[150, 225], seed=42, start_epoch=0, type='float32', workers=20)
