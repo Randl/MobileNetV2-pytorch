@@ -16,16 +16,15 @@ Use the model defined in `model.py` to run ImageNet example:
 python imagenet.py --dataroot "/path/to/imagenet/"
 ```
 
-##Results
+## Results
 
-For x0.35 model I achieved 0.3% higher top-1 accuracy than claimed.
+For x1.0 model I achieved 0.3% higher top-1 accuracy than claimed.
  
 |Classification Checkpoint| MACs (M)   | Parameters (M)| Top-1 Accuracy| Top-5 Accuracy|  Claimed top-1|  Claimed top-5|
 |-------------------------|------------|---------------|---------------|---------------|---------------|---------------|
-| [mobilenet_v2_0.35_224] |300         |3.47           |           72.1|          90.48|           71.8|           91.0|
+|   [mobilenet_v2_1.0_224]|300         |3.47           |           72.1|          90.48|           71.8|           91.0|
 
-* TODO: x0.35 model(big batch) 
-* TODO: regular model(big batch) 
+* TODO: x0.35 model
 * TODO: x1.4 model
 * TODO: 96 input size model
 * TODO: INT8 model (pytorch)
