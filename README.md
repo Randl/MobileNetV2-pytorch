@@ -18,11 +18,14 @@ python imagenet.py --dataroot "/path/to/imagenet/"
 
 ##Results
 
-* TODO: x0.35 model(regular batch) 
+For x0.35 model I achieved 0.3% higher top-1 accuracy than claimed.
+ 
+|Classification Checkpoint| MACs (M)   | Parameters (M)| Top-1 Accuracy| Top-5 Accuracy|  Claimed top-1|  Claimed top-5|
+|-------------------------|------------|---------------|---------------|---------------|---------------|---------------|
+| [mobilenet_v2_0.35_224] |300         |3.47           |           72.1|          90.48|           71.8|           91.0|
+
 * TODO: x0.35 model(big batch) 
-* TODO: regular model(regular batch) 
 * TODO: regular model(big batch) 
 * TODO: x1.4 model
 * TODO: 96 input size model
-* TODO: RMSprop with sgd init (?)
 * TODO: INT8 model (pytorch)

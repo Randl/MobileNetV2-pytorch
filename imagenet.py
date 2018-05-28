@@ -18,7 +18,7 @@ import flops_benchmark
 from logger import CsvLogger
 from model import MobileNet2
 
-parser = argparse.ArgumentParser(description='ShuffleNet training with PyTorch')
+parser = argparse.ArgumentParser(description='MobileNetv2 training with PyTorch')
 parser.add_argument('--dataroot', required=True, metavar='PATH',
                     help='Path to ImageNet train and val folders, preprocessed as described in '
                          'https://github.com/facebook/fb.resnet.torch/blob/master/INSTALL.md#download-the-imagenet-dataset')
@@ -141,7 +141,6 @@ def main():
     if args.gpus is not None:
         args.gpus = [int(i) for i in args.gpus.split(',')]
         device = 'cuda:' + str(args.gpus[0])
-        # torch.cuda.set_device(args.gpus[0])
         cudnn.benchmark = True
     else:
         device = 'cpu'
@@ -156,15 +155,17 @@ def main():
 
     model = MobileNet2(input_size=args.input_size, scale=args.scaling)
     num_parameters = sum([l.nelement() for l in model.parameters()])
+    print(model)
     print('number of parameters: {}'.format(num_parameters))
     print('FLOPs: {}'.format(
-        flops_benchmark.count_flops(MobileNet2, args.batch_size // len(args.gpus), device, dtype, args.input_size, 3,
-                                    args.scaling)))
-    print(model)
+        flops_benchmark.count_flops(MobileNet2,
+                                    args.batch_size // len(args.gpus) if args.gpus is not None else args.batch_size,
+                                    device, dtype, args.input_size, 3, args.scaling)))
 
     # define loss function (criterion) and optimizer
     criterion = torch.nn.CrossEntropyLoss()
-    model = torch.nn.DataParallel(model, args.gpus)
+    if args.gpus is not None:
+        model = torch.nn.DataParallel(model, args.gpus)
     model.to(device=device, dtype=dtype)
     criterion.to(device=device, dtype=dtype)
 
