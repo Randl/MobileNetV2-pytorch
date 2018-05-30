@@ -179,7 +179,7 @@ def main():
     if args.resume:
         if os.path.isfile(args.resume):
             print("=> loading checkpoint '{}'".format(args.resume))
-            checkpoint = torch.load(args.resume)
+            checkpoint = torch.load(args.resume, map_location=device)
             args.start_epoch = checkpoint['epoch'] - 1
             best_test = checkpoint['best_prec1']
             model.load_state_dict(checkpoint['state_dict'])
@@ -190,7 +190,7 @@ def main():
             checkpoint_path = os.path.join(args.resume, 'checkpoint.pth.tar')
             csv_path = os.path.join(args.resume, 'results.csv')
             print("=> loading checkpoint '{}'".format(checkpoint_path))
-            checkpoint = torch.load(checkpoint_path)
+            checkpoint = torch.load(checkpoint_path, map_location=device)
             args.start_epoch = checkpoint['epoch'] - 1
             best_test = checkpoint['best_prec1']
             model.load_state_dict(checkpoint['state_dict'])
