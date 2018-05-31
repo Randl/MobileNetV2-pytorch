@@ -1,9 +1,9 @@
 import argparse
+import csv
 import os
 import random
 import shutil
 import sys
-import csv
 from datetime import datetime
 
 import torch
@@ -48,7 +48,7 @@ parser.add_argument('--seed', type=int, default=None, metavar='S', help='random 
 
 # Architecture
 parser.add_argument('--scaling', type=float, default=1, metavar='SC', help='Scaling of MobileNet (default x1).')
-parser.add_argument('--input_size', type=float, default=224, metavar='I', help='Input size of MobileNet (default 224).')
+parser.add_argument('--input-size', type=int, default=224, metavar='I', help='Input size of MobileNet (default 224).')
 
 args = parser.parse_args()
 

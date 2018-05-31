@@ -83,3 +83,4 @@ class CsvLogger:
         self.plot_progress_errk(claimed_acc1, title, 1)
         self.plot_progress_errk(claimed_acc5, title, 5)
         self.plot_progress_loss(title)
+        plt.close('all')

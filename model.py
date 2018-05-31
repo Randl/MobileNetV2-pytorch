@@ -25,6 +25,7 @@ def _make_divisible(v, divisor, min_value=None):
         new_v += divisor
     return new_v
 
+
 class LinearBottleneck(nn.Module):
     def __init__(self, inplanes, outplanes, stride=1, t=6, activation=nn.ReLU6):
         super(LinearBottleneck, self).__init__()
@@ -100,7 +101,7 @@ class MobileNet2(nn.Module):
         self.last_conv_out_ch = 1280 if self.scale <= 1 else _make_divisible(1280 * self.scale, 8)
         self.conv_last = nn.Conv2d(self.c[-1], self.last_conv_out_ch, kernel_size=1, bias=False)
         self.bn_last = nn.BatchNorm2d(self.last_conv_out_ch)
-        self.avgpool = nn.AvgPool2d(input_size // 32)
+        self.avgpool = nn.AvgPool2d(int(input_size // 32))
         self.dropout = nn.Dropout(p=0.2, inplace=True)  # confirmed by paper authors
         self.fc = nn.Linear(self.last_conv_out_ch, self.num_classes)
         self.init_params()
