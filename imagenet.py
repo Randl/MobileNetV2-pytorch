@@ -11,6 +11,7 @@ import torch.backends.cudnn as cudnn
 import torch.nn.parallel
 import torch.optim
 import torch.utils.data
+from torch.optim.lr_scheduler import MultiStepLR
 from torchvision import datasets, transforms
 from tqdm import tqdm, trange
 
@@ -50,7 +51,7 @@ parser.add_argument('--seed', type=int, default=None, metavar='S', help='random 
 parser.add_argument('--scaling', type=float, default=1, metavar='SC', help='Scaling of MobileNet (default x1).')
 parser.add_argument('--input-size', type=int, default=224, metavar='I', help='Input size of MobileNet (default 224).')
 
-args = parser.parse_args()
+args = parser.parse_args()  # TODO: put inside
 
 
 def save_checkpoint(state, is_best, filepath='./', filename='checkpoint.pth.tar'):
@@ -171,7 +172,7 @@ def main():
 
     optimizer = torch.optim.SGD(model.parameters(), args.learning_rate, momentum=args.momentum, weight_decay=args.decay,
                                 nesterov=True)
-
+    scheduler = MultiStepLR(optimizer, milestones=args.schedule, gamma=args.gamma)
     best_test = 0
 
     # optionally resume from a checkpoint
@@ -220,10 +221,7 @@ def main():
             csv_logger.write_text(
                 'Claimed accuracies are: {:.2f}% top-1, {:.2f}% top-5'.format(claimed_acc1 * 100., claimed_acc5 * 100.))
     for epoch in trange(args.start_epoch, args.epochs + 1):
-        if epoch in args.schedule:
-            args.learning_rate *= args.gamma
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = args.learning_rate
+        scheduler.step()
         train_loss, train_accuracy1, train_accuracy5, = train(model, epoch, optimizer, criterion, device, dtype)
         test_loss, test_accuracy1, test_accuracy5 = test(model, criterion, device, dtype)
         csv_logger.write({'epoch': epoch + 1, 'val_error1': 1 - test_accuracy1, 'val_error5': 1 - test_accuracy5,
