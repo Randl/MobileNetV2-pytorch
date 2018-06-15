@@ -14,10 +14,11 @@ from torch.optim.lr_scheduler import MultiStepLR
 from tqdm import trange
 
 import flops_benchmark
+from clr import CyclicLR
 from data import get_loaders
 from logger import CsvLogger
 from model import MobileNet2
-from run import train, test, save_checkpoint
+from run import train, test, save_checkpoint, find_bounds_clr
 
 parser = argparse.ArgumentParser(description='MobileNetv2 training with PyTorch')
 parser.add_argument('--dataroot', required=True, metavar='PATH',
@@ -30,13 +31,23 @@ parser.add_argument('--type', default='float32', help='Type of tensor: float32, 
 
 # Optimization options
 parser.add_argument('--epochs', type=int, default=400, help='Number of epochs to train.')
-parser.add_argument('-b', '--batch-size', default=64, type=int, metavar='N', help='mini-batch size (default: 96)')
+parser.add_argument('-b', '--batch-size', default=64, type=int, metavar='N', help='mini-batch size (default: 64)')
 parser.add_argument('--learning_rate', '-lr', type=float, default=0.01, help='The learning rate.')
 parser.add_argument('--momentum', '-m', type=float, default=0.9, help='Momentum.')
 parser.add_argument('--decay', '-d', type=float, default=4e-5, help='Weight decay (L2 penalty).')
 parser.add_argument('--gamma', type=float, default=0.1, help='LR is multiplied by gamma at scheduled epochs.')
 parser.add_argument('--schedule', type=int, nargs='+', default=[200, 300],
                     help='Decrease learning rate at these epochs.')
+
+# CLR
+parser.add_argument('--clr', dest='clr', action='store_true', help='Use CLR')
+parser.add_argument('--min-lr', type=float, default=1e-5, help='Minimal LR for CLR.')
+parser.add_argument('--max-lr', type=float, default=5, help='Maximal LR for CLR.')
+parser.add_argument('--epochs-per-step', type=int, default=5,
+                    help='Number of epochs per step in CLR, recommended to be between 2 and 10.')
+parser.add_argument('--mode', default='triangular', help='CLR mode. One of {triangular, triangular2, exp_range}')
+parser.add_argument('--find-clr', dest='find_clr', action='store_true',
+                    help='Run search for optimal LR in range (min_lr, max_lr)')
 
 # Checkpoints
 parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true', help='Just evaluate model')
@@ -49,9 +60,10 @@ parser.add_argument('--seed', type=int, default=None, metavar='S', help='random 
 
 # Architecture
 parser.add_argument('--scaling', type=float, default=1, metavar='SC', help='Scaling of MobileNet (default x1).')
-parser.add_argument('--input-size', type=int, default=224, metavar='I', help='Input size of MobileNet (default 224).')
+parser.add_argument('--input-size', type=int, default=224, metavar='I',
+                    help='Input size of MobileNet, multiple of 32 (default 224).')
 
-# https://github.com/keras-team/keras/blob/master/keras/applications/mobilenetv2.py
+# https://github.com/keras-team/keras/blob/fe066966b5afa96f2f6b9f71ec0c71158b44068d/keras/applications/mobilenetv2.py#L30
 claimed_acc_top1 = {224: {1.4: 0.75, 1.3: 0.744, 1.0: 0.718, 0.75: 0.698, 0.5: 0.654, 0.35: 0.603},
                     192: {1.0: 0.707, 0.75: 0.687, 0.5: 0.639, 0.35: 0.582},
                     160: {1.0: 0.688, 0.75: 0.664, 0.5: 0.610, 0.35: 0.557},
@@ -68,6 +80,7 @@ claimed_acc_top5 = {224: {1.4: 0.925, 1.3: 0.921, 1.0: 0.910, 0.75: 0.896, 0.5: 
 
 def main():
     args = parser.parse_args()
+
     if args.seed is None:
         args.seed = random.randint(1, 10000)
     print("Random Seed: ", args.seed)
@@ -91,6 +104,7 @@ def main():
         cudnn.benchmark = True
     else:
         device = 'cpu'
+
     if args.type == 'float64':
         dtype = torch.float64
     elif args.type == 'float32':
@@ -120,7 +134,18 @@ def main():
 
     optimizer = torch.optim.SGD(model.parameters(), args.learning_rate, momentum=args.momentum, weight_decay=args.decay,
                                 nesterov=True)
-    scheduler = MultiStepLR(optimizer, milestones=args.schedule, gamma=args.gamma)
+    if args.find_clr:
+        find_bounds_clr(model, train_loader, optimizer, criterion, device, dtype, min_lr=args.min_lr,
+                        max_lr=args.max_lr, step_size=args.epochs_per_step * len(train_loader), mode=args.mode,
+                        save_path=save_path)
+        return
+
+    if args.clr:
+        scheduler = CyclicLR(optimizer, base_lr=args.min_lr, max_lr=args.max_lr,
+                             step_size=args.epochs_per_step * len(train_loader), mode=args.mode)
+    else:
+        scheduler = MultiStepLR(optimizer, milestones=args.schedule, gamma=args.gamma)
+
     best_test = 0
 
     # optionally resume from a checkpoint
@@ -168,10 +193,18 @@ def main():
             claimed_acc5 = claimed_acc_top5[args.input_size][args.scaling]
             csv_logger.write_text(
                 'Claimed accuracies are: {:.2f}% top-1, {:.2f}% top-5'.format(claimed_acc1 * 100., claimed_acc5 * 100.))
-    for epoch in trange(args.start_epoch, args.epochs + 1):
-        scheduler.step()
+    train_network(args.start_epoch, args.epochs, scheduler, model, train_loader, val_loader, optimizer, criterion,
+                  device, dtype, args.batch_size, args.log_interval, csv_logger, save_path, claimed_acc1, claimed_acc5,
+                  best_test)
+
+
+def train_network(start_epoch, epochs, scheduler, model, train_loader, val_loader, optimizer, criterion, device, dtype,
+                  batch_size, log_interval, csv_logger, save_path, claimed_acc1, claimed_acc5, best_test):
+    for epoch in trange(start_epoch, epochs + 1):
+        if not isinstance(scheduler, CyclicLR):
+            scheduler.step()
         train_loss, train_accuracy1, train_accuracy5, = train(model, train_loader, epoch, optimizer, criterion, device,
-                                                              dtype, args.batch_size, args.log_interval)
+                                                              dtype, batch_size, log_interval, scheduler)
         test_loss, test_accuracy1, test_accuracy5 = test(model, val_loader, criterion, device, dtype)
         csv_logger.write({'epoch': epoch + 1, 'val_error1': 1 - test_accuracy1, 'val_error5': 1 - test_accuracy5,
                           'val_loss': test_loss, 'train_error1': 1 - train_accuracy1,
