@@ -2,7 +2,6 @@ import argparse
 import csv
 import os
 import random
-import shutil
 import sys
 from datetime import datetime
 
@@ -12,12 +11,13 @@ import torch.nn.parallel
 import torch.optim
 import torch.utils.data
 from torch.optim.lr_scheduler import MultiStepLR
-from torchvision import datasets, transforms
-from tqdm import tqdm, trange
+from tqdm import trange
 
 import flops_benchmark
+from data import get_loaders
 from logger import CsvLogger
 from model import MobileNet2
+from run import train, test, save_checkpoint
 
 parser = argparse.ArgumentParser(description='MobileNetv2 training with PyTorch')
 parser.add_argument('--dataroot', required=True, metavar='PATH',
@@ -51,61 +51,6 @@ parser.add_argument('--seed', type=int, default=None, metavar='S', help='random 
 parser.add_argument('--scaling', type=float, default=1, metavar='SC', help='Scaling of MobileNet (default x1).')
 parser.add_argument('--input-size', type=int, default=224, metavar='I', help='Input size of MobileNet (default 224).')
 
-args = parser.parse_args()  # TODO: put inside
-
-
-def save_checkpoint(state, is_best, filepath='./', filename='checkpoint.pth.tar'):
-    save_path = os.path.join(filepath, filename)
-    best_path = os.path.join(filepath, 'model_best.pth.tar')
-    torch.save(state, save_path)
-    if is_best:
-        shutil.copyfile(save_path, best_path)
-
-
-__imagenet_stats = {'mean': [0.485, 0.456, 0.406],
-                    'std': [0.229, 0.224, 0.225]}
-
-
-def inception_preproccess(input_size, normalize=__imagenet_stats):
-    return transforms.Compose([
-        transforms.RandomResizedCrop(input_size),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize(**normalize)
-    ])
-
-
-def scale_crop(input_size, scale_size=None, normalize=__imagenet_stats):
-    t_list = [
-        transforms.CenterCrop(input_size),
-        transforms.ToTensor(),
-        transforms.Normalize(**normalize),
-    ]
-    if scale_size != input_size:
-        t_list = [transforms.Resize(scale_size)] + t_list
-
-    return transforms.Compose(t_list)
-
-
-def get_transform(augment=True, input_size=224):
-    normalize = __imagenet_stats
-    scale_size = int(input_size / 0.875)
-    if augment:
-        return inception_preproccess(input_size=input_size, normalize=normalize)
-    else:
-        return scale_crop(input_size=input_size, scale_size=scale_size, normalize=normalize)
-
-
-val_data = datasets.ImageFolder(root=os.path.join(args.dataroot, 'val'),
-                                transform=get_transform(False, args.input_size))
-val_loader = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size, shuffle=False, num_workers=args.workers,
-                                         pin_memory=True)
-
-train_data = datasets.ImageFolder(root=os.path.join(args.dataroot, 'train'),
-                                  transform=get_transform(input_size=args.input_size))
-train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True,
-                                           num_workers=args.workers, pin_memory=True)
-
 # https://github.com/keras-team/keras/blob/master/keras/applications/mobilenetv2.py
 claimed_acc_top1 = {224: {1.4: 0.75, 1.3: 0.744, 1.0: 0.718, 0.75: 0.698, 0.5: 0.654, 0.35: 0.603},
                     192: {1.0: 0.707, 0.75: 0.687, 0.5: 0.639, 0.35: 0.582},
@@ -122,6 +67,7 @@ claimed_acc_top5 = {224: {1.4: 0.925, 1.3: 0.921, 1.0: 0.910, 0.75: 0.896, 0.5: 
 
 
 def main():
+    args = parser.parse_args()
     if args.seed is None:
         args.seed = random.randint(1, 10000)
     print("Random Seed: ", args.seed)
@@ -163,6 +109,8 @@ def main():
                                     args.batch_size // len(args.gpus) if args.gpus is not None else args.batch_size,
                                     device, dtype, args.input_size, 3, args.scaling)))
 
+    train_loader, val_loader = get_loaders(args.dataroot, args.batch_size, args.batch_size, args.input_size,
+                                           args.workers)
     # define loss function (criterion) and optimizer
     criterion = torch.nn.CrossEntropyLoss()
     if args.gpus is not None:
@@ -206,7 +154,7 @@ def main():
             print("=> no checkpoint found at '{}'".format(args.resume))
 
     if args.evaluate:
-        loss, top1, top5 = test(model, criterion, device, dtype)  # TODO
+        loss, top1, top5 = test(model, val_loader, criterion, device, dtype)  # TODO
         return
 
     csv_logger = CsvLogger(filepath=save_path, data=data)
@@ -222,8 +170,9 @@ def main():
                 'Claimed accuracies are: {:.2f}% top-1, {:.2f}% top-5'.format(claimed_acc1 * 100., claimed_acc5 * 100.))
     for epoch in trange(args.start_epoch, args.epochs + 1):
         scheduler.step()
-        train_loss, train_accuracy1, train_accuracy5, = train(model, epoch, optimizer, criterion, device, dtype)
-        test_loss, test_accuracy1, test_accuracy5 = test(model, criterion, device, dtype)
+        train_loss, train_accuracy1, train_accuracy5, = train(model, train_loader, epoch, optimizer, criterion, device,
+                                                              dtype, args.batch_size, args.log_interval)
+        test_loss, test_accuracy1, test_accuracy5 = test(model, val_loader, criterion, device, dtype)
         csv_logger.write({'epoch': epoch + 1, 'val_error1': 1 - test_accuracy1, 'val_error5': 1 - test_accuracy5,
                           'val_loss': test_loss, 'train_error1': 1 - train_accuracy1,
                           'train_error5': 1 - train_accuracy5, 'train_loss': train_loss})
@@ -236,77 +185,6 @@ def main():
             best_test = test_accuracy1
 
     csv_logger.write_text('Best accuracy is {:.2f}% top-1'.format(best_test * 100.))
-
-
-def train(model, epoch, optimizer, criterion, device, dtype):
-    model.train()
-    correct1, correct5 = 0, 0
-
-    for batch_idx, (data, target) in enumerate(tqdm(train_loader)):
-        data, target = data.to(device=device, dtype=dtype), target.to(device=device)
-
-        optimizer.zero_grad()
-        output = model(data)
-
-        loss = criterion(output, target)
-        loss.backward()
-        optimizer.step()
-
-        corr = correct(output, target, topk=(1, 5))
-        correct1 += corr[0]
-        correct5 += corr[1]
-
-        if batch_idx % args.log_interval == 0:
-            tqdm.write(
-                'Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}. '
-                'Top-1 accuracy: {:.2f}%({:.2f}%). '
-                'Top-5 accuracy: {:.2f}%({:.2f}%).'.format(epoch, batch_idx, len(train_loader),
-                                                           100. * batch_idx / len(train_loader), loss.item(),
-                                                           100. * corr[0] / args.batch_size,
-                                                           100. * correct1 / (args.batch_size * (batch_idx + 1)),
-                                                           100. * corr[1] / args.batch_size,
-                                                           100. * correct5 / (args.batch_size * (batch_idx + 1))))
-    return loss.item(), correct1 / len(train_loader.dataset), correct5 / len(train_loader.dataset)
-
-
-def test(model, criterion, device, dtype):
-    model.eval()
-    test_loss = 0
-    correct1, correct5 = 0, 0
-
-    for batch_idx, (data, target) in enumerate(tqdm(val_loader)):
-        data, target = data.to(device=device, dtype=dtype), target.to(device=device)
-        with torch.no_grad():
-            output = model(data)
-            test_loss += criterion(output, target).item()  # sum up batch loss
-            corr = correct(output, target, topk=(1, 5))
-        correct1 += corr[0]
-        correct5 += corr[1]
-
-    test_loss /= len(val_loader)
-
-    tqdm.write(
-        '\nTest set: Average loss: {:.4f}, Top1: {}/{} ({:.1f}%), '
-        'Top5: {}/{} ({:.1f}%)'.format(test_loss, int(correct1), len(val_loader.dataset),
-                                       100. * correct1 / len(val_loader.dataset), int(correct5),
-                                       len(val_loader.dataset), 100. * correct5 / len(val_loader.dataset)))
-    return test_loss, correct1 / len(val_loader.dataset), correct5 / len(val_loader.dataset)
-
-
-# TODO: separate file
-def correct(output, target, topk=(1,)):
-    """Computes the correct@k for the specified values of k"""
-    maxk = max(topk)
-
-    _, pred = output.topk(maxk, 1, True, True)
-    pred = pred.t().type_as(target)
-    correct = pred.eq(target.view(1, -1).expand_as(pred))
-
-    res = []
-    for k in topk:
-        correct_k = correct[:k].view(-1).float().sum(0).item()
-        res.append(correct_k)
-    return res
 
 
 if __name__ == '__main__':
