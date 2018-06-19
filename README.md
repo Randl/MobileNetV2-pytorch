@@ -28,6 +28,7 @@ For x1.0 model I achieved 0.3% higher top-1 accuracy than claimed.
 |-------------------------|------------|---------------|---------------|---------------|---------------|---------------|
 |   [mobilenet_v2_1.0_224]|300         |3.47           |          72.10|          90.48|           71.8|           91.0|
 |   [mobilenet_v2_0.5_160]|50          |1.95           |          60.61|          82.87|           61.0|           83.2|
+
 You can test it with
 ```bash
 python imagenet.py --dataroot "/path/to/imagenet/" --resume "results/mobilenet_v2_1.0_224/model_best.pth.tar" -e
