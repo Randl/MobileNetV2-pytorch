@@ -1,0 +1,4 @@
+imagenet.py --dataroot /home/chaimb/ILSVRC/Data/CLS-LOC --seed 42 --gpus 0,1,2,3,4,5,6 -j 32 --scaling 0.5 --input-size 160 -b 2048 -lr 0.08
+Namespace(batch_size=2048, dataroot='/home/chaimb/ILSVRC/Data/CLS-LOC', decay=4e-05, epochs=400, evaluate=False, gamma=0.1, gpus=[0, 1, 2, 3, 4, 5, 6], input_size=160, learning_rate=0.08, log_interval=100, momentum=0.9, results_dir='./results', resume='', save='2018-06-12_20-29-41', scaling=0.5, schedule=[200, 300], seed=42, start_epoch=0, type='float32', workers=32)
+Claimed accuracies are: 61.00% top-1, 83.20% top-5
+Best accuracy is 60.68% top-1

@@ -42,10 +42,10 @@ parser.add_argument('--schedule', type=int, nargs='+', default=[200, 300],
 # CLR
 parser.add_argument('--clr', dest='clr', action='store_true', help='Use CLR')
 parser.add_argument('--min-lr', type=float, default=1e-5, help='Minimal LR for CLR.')
-parser.add_argument('--max-lr', type=float, default=5, help='Maximal LR for CLR.')
-parser.add_argument('--epochs-per-step', type=int, default=5,
+parser.add_argument('--max-lr', type=float, default=1, help='Maximal LR for CLR.')
+parser.add_argument('--epochs-per-step', type=int, default=20,
                     help='Number of epochs per step in CLR, recommended to be between 2 and 10.')
-parser.add_argument('--mode', default='triangular', help='CLR mode. One of {triangular, triangular2, exp_range}')
+parser.add_argument('--mode', default='triangular2', help='CLR mode. One of {triangular, triangular2, exp_range}')
 parser.add_argument('--find-clr', dest='find_clr', action='store_true',
                     help='Run search for optimal LR in range (min_lr, max_lr)')
 

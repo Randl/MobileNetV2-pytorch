@@ -66,8 +66,8 @@ def test(model, loader, criterion, device, dtype):
     test_loss /= len(loader)
 
     tqdm.write(
-        '\nTest set: Average loss: {:.4f}, Top1: {}/{} ({:.1f}%), '
-        'Top5: {}/{} ({:.1f}%)'.format(test_loss, int(correct1), len(loader.dataset),
+        '\nTest set: Average loss: {:.4f}, Top1: {}/{} ({:.2f}%), '
+        'Top5: {}/{} ({:.2f}%)'.format(test_loss, int(correct1), len(loader.dataset),
                                        100. * correct1 / len(loader.dataset), int(correct5),
                                        len(loader.dataset), 100. * correct5 / len(loader.dataset)))
     return test_loss, correct1 / len(loader.dataset), correct5 / len(loader.dataset)
