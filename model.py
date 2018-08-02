@@ -88,7 +88,7 @@ class MobileNet2(nn.Module):
         self.num_classes = num_classes
 
         self.num_of_channels = [32, 16, 24, 32, 64, 96, 160, 320]
-        assert (input_size % 32 == 0)
+        # assert (input_size % 32 == 0)
 
         self.c = [_make_divisible(ch * self.scale, 8) for ch in self.num_of_channels]
         self.n = [1, 1, 2, 3, 4, 3, 3, 1]
@@ -101,7 +101,7 @@ class MobileNet2(nn.Module):
         self.last_conv_out_ch = 1280 if self.scale <= 1 else _make_divisible(1280 * self.scale, 8)
         self.conv_last = nn.Conv2d(self.c[-1], self.last_conv_out_ch, kernel_size=1, bias=False)
         self.bn_last = nn.BatchNorm2d(self.last_conv_out_ch)
-        self.avgpool = nn.AvgPool2d(int(input_size // 32))
+        self.avgpool = nn.AdaptiveAvgPool2d(1)
         self.dropout = nn.Dropout(p=0.2, inplace=True)  # confirmed by paper authors
         self.fc = nn.Linear(self.last_conv_out_ch, self.num_classes)
         self.init_params()
