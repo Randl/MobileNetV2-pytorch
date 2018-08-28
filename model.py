@@ -174,7 +174,7 @@ class MobileNet2(nn.Module):
         # flatten for input to fully-connected layer
         x = x.view(x.size(0), -1)
         x = self.fc(x)
-        return F.log_softmax(x, dim=1)
+        return F.log_softmax(x, dim=1) #TODO not needed(?)
 
 
 if __name__ == "__main__":
